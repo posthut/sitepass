@@ -25,22 +25,15 @@ Failure envelope: `{ "ok": false, "error": { "code", "message", "details", "toke
 
 On upload errors, `token_consumed` is always present. Rejections never consume the token.
 
-Agent environments need outbound HTTPS to the control host. Localhost will not work.
+Preferred path: the agent uploads over HTTPS to the control host.
 
-### DNS failures (required retry before asking the human)
+If system DNS fails, retry via DNS-over-HTTPS then
+`curl --resolve CONTROL_HOST:443:IP ...` (SNI must stay on CONTROL_HOST).
 
-If name resolution fails (`Temporary failure in name resolution`, `getaddrinfo failed`,
-`Name or service not known`):
-
-1. Do **not** immediately hand off to the human.
-2. Resolve the control hostname with DNS-over-HTTPS, e.g.
-   `https://cloudflare-dns.com/dns-query?name=CONTROL_HOST&type=A` (Accept: application/dns-json)
-   or `https://dns.google/resolve?name=CONTROL_HOST&type=A`.
-3. Retry the upload connecting to that IPv4 while keeping TLS SNI / Host as CONTROL_HOST:
-   `curl --resolve CONTROL_HOST:443:IP https://CONTROL_HOST/api/v1/upload ...`
-4. Only if DoH and IP connect also fail, ask the human to run the curl locally.
-
-Never POST `/api/v1/upload` to a preview subdomain.
+If there is no outbound network at all, tell the human you cannot upload
+and ask them to use the archive file picker on the control site (fallback),
+or to run curl locally. Do not invent alternate hosts. Never POST to a
+preview subdomain.
 
 ---
 

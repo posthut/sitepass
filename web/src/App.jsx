@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   applyTheme,
   buildAgentInstruction,
@@ -10,6 +10,7 @@ import {
   login,
   logout,
   register,
+  uploadArchive,
 } from './api'
 import { detectLanguage, setLanguage, t } from './i18n'
 import './app.css'
@@ -49,6 +50,9 @@ export default function App() {
   const [authError, setAuthError] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
   const [myTokens, setMyTokens] = useState([])
+  const [uploadBusy, setUploadBusy] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const fileRef = useRef(null)
 
   useEffect(() => {
     setLanguage(lang)
@@ -180,6 +184,30 @@ export default function App() {
     setCopied(kind)
     setLiveMsg(t(lang, 'token.copied'))
     setTimeout(() => setCopied(''), 1500)
+  }
+
+  async function onManualUpload(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !session?.token) return
+    setUploadBusy(true)
+    setUploadError('')
+    try {
+      const data = await uploadArchive(session.token, file)
+      setStatus({
+        preview_url: data.preview_url || session.preview_url,
+        expires_at: data.expires_at || session.expires_at,
+        has_build: true,
+        revision: data.revision,
+        upload_count: (status?.upload_count || 0) + 1,
+      })
+      setLiveMsg(t(lang, 'upload.fallback.done'))
+      if (user) refreshMyTokens()
+    } catch (err) {
+      setUploadError(err.message || t(lang, 'error.generic'))
+    } finally {
+      setUploadBusy(false)
+    }
   }
 
   const instruction = session
@@ -391,6 +419,32 @@ export default function App() {
           >
             {session.preview_url.replace(/^https:\/\//, '')}
           </a>
+
+          {!expired ? (
+            <div className="fallback">
+              <p className="helper">{t(lang, 'upload.fallback.hint')}</p>
+              <input
+                ref={fileRef}
+                type="file"
+                className="sr-only"
+                accept=".tar.gz,.tgz,.zip,.html,application/gzip,application/zip,text/html"
+                onChange={onManualUpload}
+              />
+              <button
+                type="button"
+                className="btn btn-quiet"
+                disabled={uploadBusy}
+                onClick={() => fileRef.current?.click()}
+              >
+                {uploadBusy ? '…' : t(lang, 'upload.fallback.button')}
+              </button>
+              {uploadError ? (
+                <p className="error" role="alert">
+                  {uploadError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </section>
       )}
 

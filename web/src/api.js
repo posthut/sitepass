@@ -73,6 +73,26 @@ export async function fetchMyTokens() {
   return api('/api/v1/me/tokens')
 }
 
+export async function uploadArchive(token, file) {
+  const res = await fetch('/api/v1/upload', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+      Accept: 'application/json',
+    },
+    body: file,
+  })
+  const data = await res.json()
+  if (!res.ok || data?.ok === false) {
+    const err = new Error(data?.error?.message || 'upload failed')
+    err.code = data?.error?.code
+    throw err
+  }
+  return data
+}
+
 export function buildAgentInstruction(token, previewUrl, expiresAt, apiBase) {
   const api = (apiBase || (typeof location !== 'undefined' ? location.origin : '')).replace(/\/$/, '')
   let host = 'sitepass.tech'
@@ -91,38 +111,26 @@ export function buildAgentInstruction(token, previewUrl, expiresAt, apiBase) {
     `Preview URL (browser only — do NOT POST uploads here): ${previewUrl}`,
     `Expires at: ${expiresAt}`,
     '',
+    'Preferred path: you upload the archive yourself over HTTPS.',
     '1. Build for production.',
     '2. Pack as tar.gz or zip (index.html at archive root, or one nested folder with index.html).',
-    '3. Upload raw bytes (Content-Type: application/octet-stream).',
+    '3. Upload raw bytes (Content-Type: application/octet-stream):',
     '',
-    '=== Upload (try in this order) ===',
-    '',
-    'A) Normal upload:',
     `curl -fsS -X POST "${api}/api/v1/upload" \\`,
     `  -H "Authorization: Bearer ${token}" \\`,
     `  -H "Content-Type: application/octet-stream" \\`,
     `  --data-binary @build.tar.gz`,
     '',
-    'B) If you get DNS errors (Temporary failure in name resolution, Name or service not known,',
-    'getaddrinfo failed, nodename nor servname): DO NOT stop. Bypass system DNS:',
+    'If DNS fails in your sandbox, retry via DNS-over-HTTPS then:',
+    `curl -fsS --resolve ${host}:443:IP -X POST "${api}/api/v1/upload" ...`,
+    '(Resolve IP with https://cloudflare-dns.com/dns-query or https://dns.google/resolve.)',
     '',
-    'B1) Resolve the control hostname via DNS-over-HTTPS (HTTPS, not UDP/53):',
-    `curl -fsS "https://cloudflare-dns.com/dns-query?name=${host}&type=A" -H "accept: application/dns-json"`,
-    `curl -fsS "https://dns.google/resolve?name=${host}&type=A"`,
-    'Take the first Answer.data IPv4 address as IP.',
-    '',
-    'B2) Upload with TLS SNI still set to the hostname (required for the certificate):',
-    `curl -fsS --resolve ${host}:443:IP -X POST "${api}/api/v1/upload" \\`,
-    `  -H "Authorization: Bearer ${token}" \\`,
-    `  -H "Content-Type: application/octet-stream" \\`,
-    `  --data-binary @build.tar.gz`,
-    '',
-    'B3) Python equivalent if curl is missing: connect to IP, wrap_socket with server_hostname=',
-    `"${host}", Host header ${host}, POST /api/v1/upload with the same headers and body.`,
-    '',
-    'C) Only if A and B both fail (no outbound HTTPS at all, or IP connect blocked):',
-    'give the human the exact curl from A and ask them to run it locally. Do not invent',
-    'alternate API hosts. Never POST to the preview hostname.',
+    'If you have NO outbound network at all (only a local shell / blocked HTTPS):',
+    'do not invent workarounds. Tell the human clearly that you cannot upload,',
+    'give them the packed build.tar.gz (or the files to pack), and ask them to',
+    `use the fallback file picker on ${api} while this token is open.`,
+    'You may also paste the curl above as an optional terminal alternative.',
+    'Never POST to the preview hostname.',
     '',
     `Contract: ${api}/llms.txt`,
     'Re-upload with the same token to replace the preview. The preview URL does not change.',
