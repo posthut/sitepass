@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,6 +30,9 @@ type Server struct {
 	LLMsPath string
 	DocsBase string
 	Now      func() time.Time
+
+	uploadSem     chan struct{}
+	uploadSemOnce sync.Once
 }
 
 func (s *Server) now() time.Time {
@@ -82,15 +86,69 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	} else if s.CFG.ReadOnly {
 		status = "read_only"
 		accepting = false
-	} else if usage >= s.CFG.DiskCriticalPercent || usage >= s.CFG.DiskHighWaterPercent {
+	} else if usage >= s.CFG.DiskCriticalPercent {
+		status = "degraded"
+		accepting = false
+	} else if usage >= s.CFG.DiskHighWaterPercent {
 		status = "degraded"
 	}
+	if accepting && s.CFG.MinAvailableMemMB > 0 {
+		if avail, err := health.MemAvailableMB(); err == nil && avail < s.CFG.MinAvailableMemMB {
+			status = "degraded"
+			accepting = false
+		}
+	}
 	writeOK(w, http.StatusOK, map[string]any{
-		"status":             status,
-		"accepting_uploads":  accepting,
-		"disk_usage_percent": usage,
-		"abuse_contact":      s.CFG.AbuseContact,
+		"status":                   status,
+		"accepting_uploads":        accepting,
+		"disk_usage_percent":       usage,
+		"abuse_contact":            s.CFG.AbuseContact,
+		"max_concurrent_uploads":   s.CFG.MaxConcurrentUploads,
+		"upload_slots_in_use":      s.uploadSlotsInUse(),
 	})
+}
+
+func (s *Server) uploadSlots() chan struct{} {
+	s.uploadSemOnce.Do(func() {
+		n := s.CFG.MaxConcurrentUploads
+		if n <= 0 {
+			n = 2
+		}
+		s.uploadSem = make(chan struct{}, n)
+	})
+	return s.uploadSem
+}
+
+func (s *Server) tryAcquireUploadSlot() bool {
+	select {
+	case s.uploadSlots() <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) releaseUploadSlot() {
+	select {
+	case <-s.uploadSlots():
+	default:
+	}
+}
+
+func (s *Server) uploadSlotsInUse() int {
+	return len(s.uploadSlots())
+}
+
+func (s *Server) rejectIfOverloaded(w http.ResponseWriter) bool {
+	if s.CFG.MinAvailableMemMB > 0 {
+		if avail, err := health.MemAvailableMB(); err == nil && avail < s.CFG.MinAvailableMemMB {
+			w.Header().Set("Retry-After", "30")
+			s.writeAPIError(w, http.StatusServiceUnavailable, CodeServiceOverloaded,
+				fmt.Sprintf("Host memory is low (%d MiB available). Retry shortly.", avail), nil)
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +185,9 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	if s.CFG.ReadOnly {
 		s.writeAPIError(w, http.StatusServiceUnavailable, CodeServiceReadOnly,
 			"Service is in read-only mode. New tokens are not accepted.", nil)
+		return
+	}
+	if s.rejectIfOverloaded(w) {
 		return
 	}
 

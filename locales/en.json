@@ -19,7 +19,6 @@
   "waiting.body": "Waiting for your agent to upload.",
   "error.generic": "Something went wrong. Try again.",
   "error.archive_too_large.message": "Archive is {size}. The limit is {limit}.",
-  "abuse.link": "Report abuse",
   "theme.light": "Light",
   "theme.dark": "Dark",
   "theme.system": "System",
@@ -31,6 +30,6 @@
   "auth.username": "Username",
   "auth.password": "Password",
   "auth.no_email": "No email needed. Pick a username and password — the account works immediately.",
-  "auth.registered_hint": "Signed in: new tokens last 2 hours and stay in your project list.",
+  "auth.registered_hint": "Signed in: tokens last 2 hours, up to 30 new ones per hour from your IP, and show in the list below.",
   "projects.title": "Your previews"
 }

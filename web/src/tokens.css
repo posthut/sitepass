@@ -4,8 +4,8 @@
   --surface: #ffffff;
   --sunken: #f1f3f1;
   --line: #e2e5e2;
-  --ink: #16191a;
-  --ink-muted: #666d6b;
+  --ink: #2c3230;
+  --ink-muted: #6a716f;
   --ink-faint: #9aa09e;
   --accent: #1f6b4f;
   --accent-hover: #185840;
@@ -16,8 +16,8 @@
   --font-human: "Onest Variable", "Onest", "Segoe UI", sans-serif;
   --font-machine: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
-  --text-display: 600 40px/44px var(--font-human);
-  --text-title: 600 24px/30px var(--font-human);
+  --text-display: 500 40px/44px var(--font-human);
+  --text-title: 500 24px/30px var(--font-human);
   --text-body-lg: 400 18px/28px var(--font-human);
   --text-body: 400 16px/24px var(--font-human);
   --text-small: 400 14px/20px var(--font-human);

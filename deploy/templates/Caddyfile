@@ -21,9 +21,17 @@
 	header X-Content-Type-Options "nosniff"
 	header Cache-Control "no-cache"
 
-	root * {{BUILDS_DIR}}/{labels.2}/current
-	try_files {path} {path}/ {path}.html /index.html
-	file_server
+	# Agents sometimes POST to the preview host by mistake.
+	handle /api/* {
+		header Content-Type "application/json; charset=utf-8"
+		respond `{"ok":false,"error":{"code":"wrong_host","message":"API lives on the control host, not this preview subdomain. POST uploads to https://{{CONTROL_DOMAIN}}/api/v1/upload. Read https://{{CONTROL_DOMAIN}}/llms.txt.","details":{},"token_consumed":false,"docs":"https://{{CONTROL_DOMAIN}}/llms.txt#wrong_host"}}` 404
+	}
+
+	handle {
+		root * {{BUILDS_DIR}}/{labels.2}/current
+		try_files {path} {path}/ {path}.html /index.html
+		file_server
+	}
 
 	handle_errors {
 		rewrite * /expired.html

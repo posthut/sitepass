@@ -26,6 +26,8 @@ type Config struct {
 	ACMEDNSProvider       string
 	ACMEDNSToken          string
 	ReadOnly              bool
+	MaxConcurrentUploads  int
+	MinAvailableMemMB     int
 }
 
 // Load reads SITEPASS_* environment variables and validates them.
@@ -57,6 +59,8 @@ func Load() (Config, error) {
 	if cfg.DiskCriticalPercent, err = requiredInt("SITEPASS_DISK_CRITICAL_PERCENT"); err != nil {
 		return Config{}, err
 	}
+	cfg.MaxConcurrentUploads = optionalInt("SITEPASS_MAX_CONCURRENT_UPLOADS", 2)
+	cfg.MinAvailableMemMB = optionalInt("SITEPASS_MIN_AVAILABLE_MEM_MB", 96)
 
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
@@ -97,6 +101,12 @@ func (c Config) validate() error {
 	if c.DiskCriticalPercent <= c.DiskHighWaterPercent || c.DiskCriticalPercent >= 100 {
 		return fmt.Errorf("SITEPASS_DISK_CRITICAL_PERCENT must be greater than high-water and below 100")
 	}
+	if c.MaxConcurrentUploads <= 0 {
+		return fmt.Errorf("SITEPASS_MAX_CONCURRENT_UPLOADS must be positive")
+	}
+	if c.MinAvailableMemMB < 0 {
+		return fmt.Errorf("SITEPASS_MIN_AVAILABLE_MEM_MB must be >= 0 (0 disables the check)")
+	}
 	// Shared-apex mode: CONTROL == PREVIEW means previews are served at
 	// <label>.<domain> on the same registrable domain as the control site.
 	if c.ControlDomain != c.PreviewDomain &&
@@ -128,6 +138,18 @@ func requiredInt64(name string) (int64, error) {
 		return 0, fmt.Errorf("%s is not a valid integer: %s", name, raw)
 	}
 	return v, nil
+}
+
+func optionalInt(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return v
 }
 
 func parseBoolEnv(name string) bool {

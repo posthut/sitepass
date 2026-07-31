@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/posthut/sitepass/internal/archive"
+	"github.com/posthut/sitepass/internal/health"
 	"github.com/posthut/sitepass/internal/intake"
 	"github.com/posthut/sitepass/internal/publish"
 	"github.com/posthut/sitepass/internal/storage"
@@ -26,6 +27,23 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			"Service is in read-only mode. Uploads are not accepted.", nil)
 		return
 	}
+	if s.rejectIfOverloaded(w) {
+		return
+	}
+	usage, _ := health.DiskUsagePercent(s.CFG.BuildsDir)
+	if usage >= s.CFG.DiskCriticalPercent {
+		w.Header().Set("Retry-After", "60")
+		s.writeAPIError(w, http.StatusServiceUnavailable, CodeStorageCapacityExceeded,
+			fmt.Sprintf("Disk usage is %d%% (critical). Uploads are paused until space is freed.", usage), nil)
+		return
+	}
+	if !s.tryAcquireUploadSlot() {
+		w.Header().Set("Retry-After", "15")
+		s.writeAPIError(w, http.StatusServiceUnavailable, CodeServiceOverloaded,
+			"Too many uploads in progress on this host. Retry shortly.", nil)
+		return
+	}
+	defer s.releaseUploadSlot()
 
 	hash, ok := s.bearerHash(r)
 	if !ok {

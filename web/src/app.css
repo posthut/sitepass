@@ -44,13 +44,17 @@
 
 .headline {
   font: var(--text-display);
+  color: var(--ink);
+  font-weight: 500;
+  letter-spacing: -0.02em;
   margin: 0 0 var(--space-4);
   max-width: 18ch;
 }
 
 @media (max-width: 640px) {
   .headline {
-    font: 600 32px/38px var(--font-human);
+    font: 500 32px/38px var(--font-human);
+    letter-spacing: -0.02em;
   }
 }
 
@@ -59,6 +63,13 @@
   color: var(--ink-muted);
   margin: 0 0 var(--space-7);
   max-width: 62ch;
+}
+
+.mono-lg {
+  font: var(--text-mono-lg);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  margin: 0 0 var(--space-4);
 }
 
 .card {
@@ -184,12 +195,6 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-muted);
-}
-
-.mono-lg {
-  font: var(--text-mono-lg);
-  overflow-wrap: anywhere;
-  margin: 0 0 var(--space-4);
 }
 
 .mono {
@@ -326,12 +331,6 @@
   font: var(--text-small);
   color: var(--ink-faint);
   flex-shrink: 0;
-}
-
-.footer {
-  margin-top: var(--space-7);
-  font: var(--text-small);
-  color: var(--ink-faint);
 }
 
 .sr-only {

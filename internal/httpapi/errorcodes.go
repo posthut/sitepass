@@ -23,6 +23,7 @@ const (
 	CodeRateLimited              ErrorCode = "rate_limited"
 	CodeStorageCapacityExceeded  ErrorCode = "storage_capacity_exceeded"
 	CodeServiceReadOnly          ErrorCode = "service_read_only"
+	CodeServiceOverloaded        ErrorCode = "service_overloaded"
 	CodeInternalError            ErrorCode = "internal_error"
 	CodeAuthInvalid              ErrorCode = "auth_invalid"
 	CodeAuthConflict             ErrorCode = "auth_conflict"
@@ -49,6 +50,7 @@ func AllCodes() []ErrorCode {
 		CodeRateLimited,
 		CodeStorageCapacityExceeded,
 		CodeServiceReadOnly,
+		CodeServiceOverloaded,
 		CodeInternalError,
 		CodeAuthInvalid,
 		CodeAuthConflict,

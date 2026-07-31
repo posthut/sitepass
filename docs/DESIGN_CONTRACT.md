@@ -39,8 +39,8 @@ every generated landing page, and this product should not look like one.
     surface       #FFFFFF    cards, raised areas
     sunken        #F1F3F1    inset areas, code blocks, disabled fills
     line          #E2E5E2    all borders and rules
-    ink           #16191A    primary text
-    ink-muted     #666D6B    secondary text, labels
+    ink           #2C3230    primary text
+    ink-muted     #6A716F    secondary text, labels
     ink-faint     #9AA09E    placeholders, disabled text
     accent        #1F6B4F    primary action, live state
     accent-hover  #185840
@@ -106,8 +106,8 @@ request to a domain the operator does not control.
 
 ### Scale
 
-    display   40 / 44    600    one per page, the headline
-    title     24 / 30    600    state headings
+    display   40 / 44    500    one per page, the headline
+    title     24 / 30    500    state headings
     body-lg   18 / 28    400    lead paragraph
     body      16 / 24    400    default
     small     14 / 20    400    helper text, warnings

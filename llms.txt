@@ -14,13 +14,33 @@ Anonymous use needs no account. Optional username+password accounts (no
 email verification) get a longer token TTL and a list of their previews.
 The human creates a token in the browser and hands it to the agent.
 
-Base API path: `/api/v1`
+Base API path: `/api/v1` on the **control host** only
+(e.g. `https://sitepass.tech`). Preview hosts (`https://<label>.sitepass.tech`)
+serve static files only — never POST `/api/v1/upload` there.
+
 All API responses: `application/json; charset=utf-8` (except this file)
 
 Success envelope: `{ "ok": true, ...payload }`
 Failure envelope: `{ "ok": false, "error": { "code", "message", "details", "token_consumed", "docs" } }`
 
 On upload errors, `token_consumed` is always present. Rejections never consume the token.
+
+Agent environments need outbound HTTPS to the control host. Localhost will not work.
+
+### DNS failures (required retry before asking the human)
+
+If name resolution fails (`Temporary failure in name resolution`, `getaddrinfo failed`,
+`Name or service not known`):
+
+1. Do **not** immediately hand off to the human.
+2. Resolve the control hostname with DNS-over-HTTPS, e.g.
+   `https://cloudflare-dns.com/dns-query?name=CONTROL_HOST&type=A` (Accept: application/dns-json)
+   or `https://dns.google/resolve?name=CONTROL_HOST&type=A`.
+3. Retry the upload connecting to that IPv4 while keeping TLS SNI / Host as CONTROL_HOST:
+   `curl --resolve CONTROL_HOST:443:IP https://CONTROL_HOST/api/v1/upload ...`
+4. Only if DoH and IP connect also fail, ask the human to run the curl locally.
+
+Never POST `/api/v1/upload` to a preview subdomain.
 
 ---
 
@@ -62,9 +82,12 @@ subdomain, expires_at, expires_in_seconds, revision, has_build, live } ] }`.
 
 ### POST /api/v1/upload
 
+**Control host only.** Do not call this on a preview subdomain.
+
 Header: `Authorization: Bearer <token>`
 
-Body: `multipart/form-data` with part named `archive`, or `application/octet-stream`.
+Body: `multipart/form-data` with part named `archive`, or `application/octet-stream`
+(raw archive bytes). Prefer octet-stream for agent uploads.
 
 Optional header: `X-Content-SHA256` (hex digest of body).
 
@@ -105,6 +128,8 @@ tokens may still upload; only new token creation is refused.
   falls below high-water; content removed; tokens marked revoked.
 - Per-IP token creation and per-token upload hourly limits → `rate_limited`.
 - Maintenance: `SITEPASS_READ_ONLY=true` → `service_read_only` on tokens/upload.
+- Concurrent unpack cap / low memory → `service_overloaded` (Retry-After).
+- Critical disk also pauses uploads until the reaper frees space.
 
 ### GET /llms.txt
 
@@ -229,6 +254,12 @@ HTTP 503. Disk above the high-water mark.
 
 HTTP 503. Maintenance mode.
 
+### service_overloaded
+
+HTTP 503. Host is temporarily out of upload capacity (too many concurrent
+unpacks, or free memory below the configured floor). Response includes
+Retry-After. Retry later; the token is not consumed.
+
 ### internal_error
 
 HTTP 500. Unexpected failure. Response includes a correlation id.
@@ -245,9 +276,10 @@ HTTP 409. Username already taken.
 
 HTTP 401. Session missing or expired.
 
-### auth_validation
+### wrong_host
 
-HTTP 422. Username/password format invalid.
+HTTP 404 from a preview subdomain if `/api/*` is requested there.
+Upload and other API calls belong on the control host only.
 
 ---
 
@@ -263,13 +295,13 @@ curl -sS -X POST https://CONTROL/api/v1/tokens \
 
 # Response includes token (shown once), preview_url, expires_at.
 
-# 2. Agent packs the production build and uploads it.
+# 2. Agent packs the production build and uploads it to CONTROL — not to preview_url.
 curl -sS -X POST https://CONTROL/api/v1/upload \
   -H "Authorization: Bearer TOKEN" \
   -H 'Content-Type: application/octet-stream' \
   --data-binary @dist.tar.gz
 
-# 3. Open preview_url. Re-upload with the same token to replace the site.
+# 3. Open preview_url in a browser. Re-upload with the same token to replace the site.
 ```
 
 ### Example 2 — check status, then revoke

@@ -3,7 +3,6 @@ import {
   applyTheme,
   buildAgentInstruction,
   createToken,
-  fetchHealth,
   fetchMe,
   fetchMyTokens,
   fetchStatus,
@@ -50,26 +49,10 @@ export default function App() {
   const [authError, setAuthError] = useState('')
   const [authBusy, setAuthBusy] = useState(false)
   const [myTokens, setMyTokens] = useState([])
-  const [abuseContact, setAbuseContact] = useState('abuse@localhost')
 
   useEffect(() => {
     setLanguage(lang)
   }, [lang])
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const data = await fetchHealth()
-        if (!cancelled && data.abuse_contact) setAbuseContact(data.abuse_contact)
-      } catch {
-        /* keep default */
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -200,7 +183,12 @@ export default function App() {
   }
 
   const instruction = session
-    ? buildAgentInstruction(session.token, session.preview_url, session.expires_at)
+    ? buildAgentInstruction(
+        session.token,
+        session.preview_url,
+        session.expires_at,
+        typeof window !== 'undefined' ? window.location.origin : '',
+      )
     : ''
 
   return (
@@ -428,9 +416,6 @@ export default function App() {
         </section>
       ) : null}
 
-      <div className="footer">
-        <a href={`mailto:${abuseContact}`}>{t(lang, 'abuse.link')}</a>
-      </div>
       <div className="sr-only" aria-live="polite">
         {liveMsg}
       </div>

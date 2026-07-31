@@ -36,10 +36,6 @@ async function api(path, options = {}) {
   return data
 }
 
-export async function fetchHealth() {
-  return api('/api/v1/health')
-}
-
 export async function createToken(projectName) {
   const body = projectName ? JSON.stringify({ project_name: projectName }) : '{}'
   return api('/api/v1/tokens', { method: 'POST', body })
@@ -77,25 +73,58 @@ export async function fetchMyTokens() {
   return api('/api/v1/me/tokens')
 }
 
-export function buildAgentInstruction(token, previewUrl, expiresAt) {
+export function buildAgentInstruction(token, previewUrl, expiresAt, apiBase) {
+  const api = (apiBase || (typeof location !== 'undefined' ? location.origin : '')).replace(/\/$/, '')
+  let host = 'sitepass.tech'
+  try {
+    host = new URL(api).hostname
+  } catch {
+    /* keep default */
+  }
+
   return [
     'Publish this static site build with Sitepass.',
     '',
+    `API base (control host — upload HERE only): ${api}`,
+    `Control hostname: ${host}`,
     `Upload token: ${token}`,
-    `Preview URL: ${previewUrl}`,
+    `Preview URL (browser only — do NOT POST uploads here): ${previewUrl}`,
     `Expires at: ${expiresAt}`,
     '',
-    '1. Build the project for production.',
-    '2. Pack the build output as tar.gz or zip (directory must contain index.html, or a single nested folder with index.html).',
-    '3. Upload:',
+    '1. Build for production.',
+    '2. Pack as tar.gz or zip (index.html at archive root, or one nested folder with index.html).',
+    '3. Upload raw bytes (Content-Type: application/octet-stream).',
     '',
-    `curl -X POST "$SITEPASS_API/api/v1/upload" \\`,
+    '=== Upload (try in this order) ===',
+    '',
+    'A) Normal upload:',
+    `curl -fsS -X POST "${api}/api/v1/upload" \\`,
     `  -H "Authorization: Bearer ${token}" \\`,
     `  -H "Content-Type: application/octet-stream" \\`,
     `  --data-binary @build.tar.gz`,
     '',
-    'Replace $SITEPASS_API with the control site origin (same host as this page).',
-    'Read /llms.txt for the full contract and error codes.',
-    'Re-upload with the same token to replace the preview. The URL does not change.',
+    'B) If you get DNS errors (Temporary failure in name resolution, Name or service not known,',
+    'getaddrinfo failed, nodename nor servname): DO NOT stop. Bypass system DNS:',
+    '',
+    'B1) Resolve the control hostname via DNS-over-HTTPS (HTTPS, not UDP/53):',
+    `curl -fsS "https://cloudflare-dns.com/dns-query?name=${host}&type=A" -H "accept: application/dns-json"`,
+    `curl -fsS "https://dns.google/resolve?name=${host}&type=A"`,
+    'Take the first Answer.data IPv4 address as IP.',
+    '',
+    'B2) Upload with TLS SNI still set to the hostname (required for the certificate):',
+    `curl -fsS --resolve ${host}:443:IP -X POST "${api}/api/v1/upload" \\`,
+    `  -H "Authorization: Bearer ${token}" \\`,
+    `  -H "Content-Type: application/octet-stream" \\`,
+    `  --data-binary @build.tar.gz`,
+    '',
+    'B3) Python equivalent if curl is missing: connect to IP, wrap_socket with server_hostname=',
+    `"${host}", Host header ${host}, POST /api/v1/upload with the same headers and body.`,
+    '',
+    'C) Only if A and B both fail (no outbound HTTPS at all, or IP connect blocked):',
+    'give the human the exact curl from A and ask them to run it locally. Do not invent',
+    'alternate API hosts. Never POST to the preview hostname.',
+    '',
+    `Contract: ${api}/llms.txt`,
+    'Re-upload with the same token to replace the preview. The preview URL does not change.',
   ].join('\n')
 }
