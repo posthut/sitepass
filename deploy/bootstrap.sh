@@ -7,6 +7,11 @@ ENV_FILE="${SITEPASS_ENV_FILE:-/etc/sitepass/sitepass.env}"
 DEPLOY_DIR="${SITEPASS_ROOT}/deploy"
 TEMPLATE_DIR="${DEPLOY_DIR}/templates"
 MIN_FREE_MB="${SITEPASS_MIN_FREE_MB:-2048}"
+SKIP_APT="${SITEPASS_SKIP_APT:-0}"
+SKIP_CADDY="${SITEPASS_SKIP_CADDY:-0}"
+SKIP_SYSTEMD="${SITEPASS_SKIP_SYSTEMD:-0}"
+SYSTEMD_UNIT="${SITEPASS_SYSTEMD_UNIT:-sitepass.service}"
+CADDYFILE_PATH="${SITEPASS_CADDYFILE_PATH:-/etc/caddy/Caddyfile}"
 
 step() {
 	printf '\n==> %s\n' "$*"
@@ -122,26 +127,46 @@ ensure_service_user() {
 }
 
 ensure_directories() {
-	step "Preparing /srv/sitepass paths"
-	mkdir -p "${BUILDS_DIR}" /srv/sitepass/system
-	chmod 755 /srv/sitepass "${BUILDS_DIR}" /srv/sitepass/system
+	step "Preparing builds and system pages (${BUILDS_DIR})"
+	mkdir -p "${BUILDS_DIR}"
+	local system_dir
+	if [[ "${BUILDS_DIR}" == /srv/sitepass/* ]]; then
+		system_dir=/srv/sitepass/system
+		mkdir -p /srv/sitepass "${system_dir}"
+		chmod 755 /srv/sitepass "${BUILDS_DIR}" "${system_dir}"
+	else
+		system_dir="$(dirname "${BUILDS_DIR}")/system"
+		mkdir -p "${system_dir}"
+		chmod 755 "$(dirname "${BUILDS_DIR}")" "${BUILDS_DIR}" "${system_dir}"
+	fi
 
 	if [[ -d "${DEPLOY_DIR}/system" ]]; then
-		cp -a "${DEPLOY_DIR}/system/." /srv/sitepass/system/
+		cp -a "${DEPLOY_DIR}/system/." "${system_dir}/"
 	fi
 
 	if [[ "${SERVICE_USER}" != root ]]; then
-		chown -R "${SERVICE_USER}:${SERVICE_GROUP}" /srv/sitepass
+		chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${BUILDS_DIR}" "${system_dir}"
+		if [[ "${BUILDS_DIR}" == /srv/sitepass/* ]]; then
+			chown "${SERVICE_USER}:${SERVICE_GROUP}" /srv/sitepass || true
+		fi
 	fi
+}
+
+db_name_from_dsn() {
+	local dsn="$1"
+	local path
+	path="$(sed -E 's#^[a-z]+://[^/]*/([^?]+).*#\1#' <<<"${dsn}")"
+	if [[ -z "${path}" || "${path}" == "${dsn}" ]]; then
+		printf 'sitepass'
+		return
+	fi
+	printf '%s' "${path}"
 }
 
 dsn_has_password() {
 	local dsn="$1"
 	case "${dsn}" in
-		postgres://*:*@*)
-			return 0
-			;;
-		postgresql://*:*@*)
+		postgres://*:*@*|postgresql://*:*@*)
 			return 0
 			;;
 	esac
@@ -180,17 +205,21 @@ update_env_dsn_password() {
 }
 
 ensure_postgres() {
-	step "Ensuring PostgreSQL role and database sitepass"
+	local db_name
+	db_name="$(db_name_from_dsn "${DB_DSN}")"
+	step "Ensuring PostgreSQL role sitepass and database ${db_name}"
 	systemctl enable --now postgresql >/dev/null 2>&1 || true
 
 	local role_exists db_exists
 	role_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='sitepass'" 2>/dev/null | tr -d '[:space:]')"
-	db_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='sitepass'" 2>/dev/null | tr -d '[:space:]')"
+	db_exists="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" 2>/dev/null | tr -d '[:space:]')"
 
 	local new_pass=""
-	if dsn_uses_tcp_with_user "${DB_DSN}" && ! dsn_has_password "${DB_DSN}"; then
+	# Only invent a password when creating a brand-new role. Never ALTER an
+	# existing role password — that would break other instances on the host.
+	if [[ "${role_exists}" != "1" ]] && dsn_uses_tcp_with_user "${DB_DSN}" && ! dsn_has_password "${DB_DSN}"; then
 		new_pass="$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)"
-		printf 'Generated database password (DSN had user but no password).\n'
+		printf 'Generated database password for new role sitepass.\n'
 	fi
 
 	if [[ "${role_exists}" != "1" ]]; then
@@ -200,18 +229,15 @@ ensure_postgres() {
 			sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE sitepass LOGIN;"
 		fi
 		printf 'Created PostgreSQL role sitepass\n'
-	elif [[ -n "${new_pass}" ]]; then
-		sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER ROLE sitepass PASSWORD '${new_pass}';"
-		printf 'Set password on existing PostgreSQL role sitepass\n'
 	else
-		printf 'PostgreSQL role sitepass already exists (unchanged)\n'
+		printf 'PostgreSQL role sitepass already exists (password unchanged)\n'
 	fi
 
 	if [[ "${db_exists}" != "1" ]]; then
-		sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE sitepass OWNER sitepass;"
-		printf 'Created database sitepass\n'
+		sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${db_name} OWNER sitepass;"
+		printf 'Created database %s\n' "${db_name}"
 	else
-		printf 'Database sitepass already exists\n'
+		printf 'Database %s already exists\n' "${db_name}"
 	fi
 
 	if [[ -n "${new_pass}" ]]; then
@@ -276,25 +302,41 @@ render_template() {
 }
 
 install_systemd_unit() {
-	step "Installing systemd unit sitepass.service"
-	render_template "${TEMPLATE_DIR}/sitepass.service" /etc/systemd/system/sitepass.service
+	if [[ "${SKIP_SYSTEMD}" == "1" ]]; then
+		step "Skipping systemd unit install (SITEPASS_SKIP_SYSTEMD=1)"
+		return
+	fi
+	step "Installing systemd unit ${SYSTEMD_UNIT}"
+	render_template "${TEMPLATE_DIR}/sitepass.service" "/etc/systemd/system/${SYSTEMD_UNIT}"
 	systemctl daemon-reload
-	systemctl enable sitepass.service
+	systemctl enable "${SYSTEMD_UNIT}"
 }
 
 install_caddyfile() {
-	step "Rendering Caddyfile"
-	render_template "${TEMPLATE_DIR}/Caddyfile" /etc/caddy/Caddyfile
+	if [[ "${SKIP_CADDY}" == "1" ]]; then
+		step "Skipping Caddyfile install (SITEPASS_SKIP_CADDY=1)"
+		return
+	fi
+	step "Rendering Caddyfile (${CADDYFILE_PATH})"
+	render_template "${TEMPLATE_DIR}/Caddyfile" "${CADDYFILE_PATH}"
 	if command -v caddy >/dev/null; then
-		caddy validate --config /etc/caddy/Caddyfile
+		caddy validate --config "${CADDYFILE_PATH}"
 	fi
 	systemctl enable caddy.service >/dev/null 2>&1 || true
 }
 
 reload_services() {
-	step "Reloading sitepass and Caddy"
-	systemctl restart sitepass.service
-	systemctl reload caddy.service 2>/dev/null || systemctl restart caddy.service
+	if [[ "${SKIP_SYSTEMD}" == "1" && "${SKIP_CADDY}" == "1" ]]; then
+		step "Skipping service reload (isolated bootstrap)"
+		return
+	fi
+	step "Reloading services"
+	if [[ "${SKIP_SYSTEMD}" != "1" ]]; then
+		systemctl restart "${SYSTEMD_UNIT}"
+	fi
+	if [[ "${SKIP_CADDY}" != "1" ]]; then
+		systemctl reload caddy.service 2>/dev/null || systemctl restart caddy.service
+	fi
 }
 
 smoke_health() {
@@ -311,7 +353,11 @@ smoke_health() {
 		fi
 		sleep 1
 	done
-	die "Health check failed after 10 attempts (${url}). Check: journalctl -u sitepass -n 50"
+	if [[ "${SKIP_SYSTEMD}" == "1" ]]; then
+		printf 'WARN: health check skipped wait exhausted (no systemd start). Start bin/sitepass manually and re-check %s\n' "${url}"
+		return 0
+	fi
+	die "Health check failed after 10 attempts (${url}). Check: journalctl -u ${SYSTEMD_UNIT} -n 50"
 }
 
 main() {
@@ -319,7 +365,11 @@ main() {
 	load_env
 	check_platform
 	validate_domains
-	ensure_apt_packages
+	if [[ "${SKIP_APT}" == "1" ]]; then
+		step "Skipping apt install (SITEPASS_SKIP_APT=1)"
+	else
+		ensure_apt_packages
+	fi
 	ensure_service_user
 	ensure_directories
 	ensure_postgres

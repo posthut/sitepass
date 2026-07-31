@@ -36,3 +36,10 @@ Smoke test against a running instance:
 ```bash
 SITEPASS_API=https://your.control.domain make verify
 ```
+
+Simulate a clean second-machine install on the same host (does **not**
+overwrite production Caddy/systemd):
+
+```bash
+sudo ./deploy/fresh-smoke.sh
+```
