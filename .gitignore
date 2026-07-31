@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+
+# Local host inventory (do not publish)
+HOST.md
