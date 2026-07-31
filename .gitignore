@@ -1,6 +1,52 @@
 .env
 .env.*
 !.env.example
+deploy/dev.env
+.data/
 
 # Local host inventory (do not publish)
 HOST.md
+
+# Go
+bin/
+.data/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+coverage.out
+coverage.html
+
+# Node / web
+node_modules/
+dist/
+web/dist/
+*.tsbuildinfo
+.npm
+.pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Build and temp
+tmp/
+temp/
+*.log

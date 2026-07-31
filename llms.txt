@@ -1,0 +1,201 @@
+# Sitepass — Agent Contract
+
+Status: DRAFT (MVP v0.1.0) — syncing with implementation
+
+English only. Machine logic must key on `code`, never on `message`.
+
+---
+
+## Overview
+
+Sitepass publishes a static site build on a temporary public URL. An agent
+builds the project locally, packs the output, and uploads it via HTTP. No
+account is required. The human creates a token in the browser and hands it
+to the agent.
+
+Base API path: `/api/v1`
+All API responses: `application/json; charset=utf-8` (except this file)
+
+Success envelope: `{ "ok": true, ...payload }`
+Failure envelope: `{ "ok": false, "error": { "code", "message", "details", "token_consumed", "docs" } }`
+
+On upload errors, `token_consumed` is always present. Rejections never consume the token.
+
+---
+
+## Endpoints
+
+### POST /api/v1/tokens
+
+Public. Rate limited per IP.
+
+Create an upload token. Optional body: `{ "project_name": "landing" }` (max 48 chars).
+
+Returns 201: token (shown once), token_id, preview_url, expires_at,
+expires_in_seconds, limits.
+
+### POST /api/v1/upload
+
+Header: `Authorization: Bearer <token>`
+
+Body: `multipart/form-data` with part named `archive`, or `application/octet-stream`.
+
+Optional header: `X-Content-SHA256` (hex digest of body).
+
+Returns 200: preview_url, revision, expires_at, expires_in_seconds,
+file_count, size_bytes, warnings[].
+
+Concurrent uploads on one token return 409 `upload_in_progress`.
+
+### GET /api/v1/status
+
+Header: `Authorization: Bearer <token>`
+
+Returns token state: preview_url, expires_at, expires_in_seconds, revision,
+has_build, upload_count.
+
+### DELETE /api/v1/token
+
+Header: `Authorization: Bearer <token>`
+
+Revokes the token and removes content immediately. Returns 204.
+
+### GET /api/v1/health
+
+Public, unauthenticated.
+
+Returns: status (`healthy` | `degraded` | `read_only`), accepting_uploads,
+disk_usage_percent.
+
+### GET /llms.txt
+
+Plain text agent contract (this file). Cache-Control: public, max-age=300.
+
+---
+
+## Artifact contract
+
+### Accepted formats (detected from content, not filename)
+
+- `.tar.gz` — gzip magic, then tar
+- `.zip` — PK magic
+- `.tar.zst` — zstd magic, then tar
+- single `.html` — HTML content type or `<` as first non-space byte (published as index.html)
+
+### Limits (defaults; read from plan at runtime)
+
+| Limit | Default |
+|---|---|
+| Compressed size | 100 MB |
+| Uncompressed size | 300 MB |
+| File count | 5000 |
+| Compression ratio | 200:1 |
+| Path depth | 32 |
+| Path segment length | 255 bytes |
+| Total path length | 4096 bytes |
+
+### Entry validation (fail-closed)
+
+Reject the entire upload if any entry:
+
+- Escapes the destination root after cleaning
+- Is absolute or contains `..`
+- Contains a null byte or backslash
+- Is not a regular file or directory (no symlinks, hardlinks, devices, FIFOs, sockets)
+- Exceeds running uncompressed total or file count limits
+
+Partial content is never published. Staging directory is removed on rejection.
+
+### Entry point resolution
+
+1. If `index.html` exists at archive root, that root is the site.
+2. Else if archive root contains exactly one directory and no files, descend one level and repeat.
+3. Else reject with `entrypoint_not_found`.
+
+Descent is limited to one level.
+
+### Warnings (non-blocking)
+
+- `missing_assets` — index.html references files absent from archive (up to 10 paths)
+- `large_bundle` — a single file exceeds 2 MB
+- `source_tree_present` — node_modules/, src/, or .git/ present in published tree
+
+---
+
+## Error codes
+
+All upload rejection codes have `token_consumed: false`.
+
+### token_not_found
+
+HTTP 404. Unknown token.
+
+### token_expired
+
+HTTP 410. Token lifetime elapsed.
+
+### token_revoked
+
+HTTP 410. Token deleted by its holder.
+
+### upload_in_progress
+
+HTTP 409. Another upload is being processed for this token.
+
+### archive_too_large
+
+HTTP 413. Compressed size over limit.
+
+### archive_unpacked_too_large
+
+HTTP 413. Uncompressed size over limit.
+
+### archive_too_many_files
+
+HTTP 413. File count over limit.
+
+### archive_malformed
+
+HTTP 422. Not readable as the detected format.
+
+### archive_unsafe_entry
+
+HTTP 422. Path traversal, symlink, or non-regular entry.
+
+### unsupported_format
+
+HTTP 415. Not tar.gz, zip, tar.zst, or html.
+
+### entrypoint_not_found
+
+HTTP 422. No index.html at the root or one level down.
+
+### checksum_mismatch
+
+HTTP 422. X-Content-SHA256 does not match the body.
+
+### project_name_invalid
+
+HTTP 422. Name is too long or produces an empty slug.
+
+### rate_limited
+
+HTTP 429. Per-IP or per-token limit. Response includes Retry-After.
+
+### storage_capacity_exceeded
+
+HTTP 503. Disk above the high-water mark.
+
+### service_read_only
+
+HTTP 503. Maintenance mode.
+
+### internal_error
+
+HTTP 500. Unexpected failure. Response includes a correlation id.
+
+---
+
+## Worked examples
+
+(TODO: add two worked examples when implementation is complete.)

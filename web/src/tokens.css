@@ -1,0 +1,121 @@
+:root {
+  color-scheme: light;
+  --canvas: #f9faf9;
+  --surface: #ffffff;
+  --sunken: #f1f3f1;
+  --line: #e2e5e2;
+  --ink: #16191a;
+  --ink-muted: #666d6b;
+  --ink-faint: #9aa09e;
+  --accent: #1f6b4f;
+  --accent-hover: #185840;
+  --accent-wash: #e7f0eb;
+  --warn: #8a6a24;
+  --danger: #8c3a32;
+
+  --font-human: "Onest Variable", "Onest", "Segoe UI", sans-serif;
+  --font-machine: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+
+  --text-display: 600 40px/44px var(--font-human);
+  --text-title: 600 24px/30px var(--font-human);
+  --text-body-lg: 400 18px/28px var(--font-human);
+  --text-body: 400 16px/24px var(--font-human);
+  --text-small: 400 14px/20px var(--font-human);
+  --text-label: 500 12px/16px var(--font-human);
+  --text-mono-lg: 500 18px/28px var(--font-machine);
+  --text-mono: 400 14px/20px var(--font-machine);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-full: 999px;
+
+  --duration-micro: 120ms;
+  --duration-transition: 240ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #121413;
+  --surface: #1a1d1b;
+  --sunken: #222624;
+  --line: #2e3331;
+  --ink: #eaedeb;
+  --ink-muted: #9aa29e;
+  --ink-faint: #6c736f;
+  --accent: #62a585;
+  --accent-hover: #7bb89a;
+  --accent-wash: #1c2a23;
+  --warn: #c9a45c;
+  --danger: #c8756a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
+    --canvas: #121413;
+    --surface: #1a1d1b;
+    --sunken: #222624;
+    --line: #2e3331;
+    --ink: #eaedeb;
+    --ink-muted: #9aa29e;
+    --ink-faint: #6c736f;
+    --accent: #62a585;
+    --accent-hover: #7bb89a;
+    --accent-wash: #1c2a23;
+    --warn: #c9a45c;
+    --danger: #c8756a;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font: var(--text-body);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
