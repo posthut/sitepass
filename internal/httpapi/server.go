@@ -17,6 +17,7 @@ import (
 
 	"github.com/posthut/sitepass/internal/config"
 	"github.com/posthut/sitepass/internal/health"
+	"github.com/posthut/sitepass/internal/publish"
 	"github.com/posthut/sitepass/internal/storage"
 	"github.com/posthut/sitepass/internal/token"
 )
@@ -57,6 +58,11 @@ func (s *Server) writeInternal(w http.ResponseWriter, err error) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	mux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
+	mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
+	mux.HandleFunc("GET /api/v1/auth/me", s.handleMe)
+	mux.HandleFunc("GET /api/v1/me/tokens", s.handleMyTokens)
 	mux.HandleFunc("POST /api/v1/tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /api/v1/upload", s.handleUpload)
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
@@ -69,16 +75,21 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	usage, err := health.DiskUsagePercent(s.CFG.BuildsDir)
 	status := "healthy"
+	accepting := true
 	if err != nil {
 		status = "degraded"
 		usage = 0
+	} else if s.CFG.ReadOnly {
+		status = "read_only"
+		accepting = false
 	} else if usage >= s.CFG.DiskCriticalPercent || usage >= s.CFG.DiskHighWaterPercent {
 		status = "degraded"
 	}
 	writeOK(w, http.StatusOK, map[string]any{
 		"status":             status,
-		"accepting_uploads":  true,
+		"accepting_uploads":  accepting,
 		"disk_usage_percent": usage,
+		"abuse_contact":      s.CFG.AbuseContact,
 	})
 }
 
@@ -113,6 +124,12 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.CFG.ReadOnly {
+		s.writeAPIError(w, http.StatusServiceUnavailable, CodeServiceReadOnly,
+			"Service is in read-only mode. New tokens are not accepted.", nil)
+		return
+	}
+
 	usage, _ := health.DiskUsagePercent(s.CFG.BuildsDir)
 	if usage >= s.CFG.DiskHighWaterPercent {
 		s.writeAPIError(w, http.StatusServiceUnavailable, CodeStorageCapacityExceeded,
@@ -120,10 +137,21 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var userID *int64
 	plan, err := s.Store.GetAnonymousPlan(ctx)
 	if err != nil {
 		s.writeInternal(w, err)
 		return
+	}
+	if user, ok := s.currentUser(r); ok {
+		registered, err := s.Store.GetPlanByID(ctx, storage.PlanRegistered)
+		if err != nil {
+			s.writeInternal(w, err)
+			return
+		}
+		plan = registered
+		uid := user.ID
+		userID = &uid
 	}
 
 	addr, err := netip.ParseAddr(clientIP(r))
@@ -149,7 +177,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 
 	now := s.now()
 	ttl := plan.TokenTTLSeconds
-	if s.CFG.TokenTTLSeconds > 0 {
+	if userID == nil && s.CFG.TokenTTLSeconds > 0 {
 		ttl = s.CFG.TokenTTLSeconds
 	}
 	var projectName *string
@@ -160,6 +188,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		ID:          uuid.New(),
 		TokenHash:   gen.Hash[:],
 		TokenPrefix: gen.Prefix,
+		UserID:      userID,
 		PlanID:      plan.ID,
 		ProjectName: projectName,
 		Subdomain:   gen.Subdomain,
@@ -254,7 +283,7 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		s.writeInternal(w, err)
 		return
 	}
-	_ = os.RemoveAll(filepath.Join(s.CFG.BuildsDir, t.Subdomain))
+	_ = publish.ForceRemoveAll(filepath.Join(s.CFG.BuildsDir, t.Subdomain))
 	w.WriteHeader(http.StatusNoContent)
 }
 

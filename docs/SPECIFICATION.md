@@ -12,23 +12,25 @@ Sitepass publishes a static site build on a temporary public URL so that
 a person working with a coding agent can look at the result.
 
 The user creates a token, hands it to their agent, and the agent uploads a
-build over HTTP. No account is required.
+build over HTTP. Anonymous use needs no account. Optional username+password
+accounts (no email verification) get a longer token TTL and a list of previews.
 
 ### 1.1 In scope for MVP
 
 - Anonymous token creation
+- Optional registration/login without email (username + password, session cookie)
 - Artifact upload via HTTP API, repeatable while the token is alive
 - Publication on a dedicated subdomain with TLS
-- Fixed lifetime, automatic deletion
+- Fixed lifetime, automatic deletion, disk high-water / critical capacity control
 - Web interface in Russian, Kazakh and English
 - Agent instruction block and machine-readable contract at `/llms.txt`
 - Self-hosting via a public repository and a single bootstrap script
 
 ### 1.2 Out of scope for MVP
 
-- User registration and accounts (the schema accommodates them; the
-  feature is not built)
-- Build history and named projects
+- Email verification or password recovery mail
+- Build history beyond the live revision (`history_size` remains 1)
+- Named project workspaces beyond the signed-in token list
 - Server-side rendering, API routes, any execution of customer code
 - Dependency installation
 - Custom domains
@@ -709,9 +711,10 @@ Everything environment-specific is a variable. Nothing about
     SITEPASS_ACME_DNS_PROVIDER=
     SITEPASS_ACME_DNS_TOKEN=
 
-The control and preview domains must be different registrable domains.
-Bootstrap refuses to proceed if they share a registrable suffix, and
-explains why.
+The control and preview domains may be different registrable domains, or
+the same hostname for shared-apex mode (`CONTROL == PREVIEW`, previews at
+`<label>.<domain>`). Bootstrap refuses a split pair that shares a
+registrable suffix without being equal.
 
 ### 14.2 Install
 
@@ -723,19 +726,17 @@ explains why.
 
 `bootstrap.sh` is idempotent and is also the upgrade path. It:
 
-1. Verifies Debian 13, amd64, root, free space, and that both domains
-   resolve to this host
-2. Installs `postgresql-17`, `nginx`, `certbot` and the DNS plugin
-3. Creates system users `sitepass` and `sitepass-content`
-4. Prepares `/srv/sitepass/builds` with mount options and quota
-5. Generates the database password if absent; creates role and database
-6. Downloads the release matching `VERSION`, verifies its SHA-256
-7. Renders systemd, nginx and nftables templates from the environment file
-8. Obtains or renews certificates
-9. Applies migrations
-10. Enables and starts the service
-11. Runs the smoke test and exits non-zero with a specific message on
-    failure
+1. Verifies Debian amd64, root, free space, and domain rules
+2. Installs PostgreSQL, Caddy, and build tooling (Go, Node) when missing
+3. Prepares `/srv/sitepass/builds` and system pages
+4. Ensures the database role and database exist
+5. Builds the Go binary and control UI from the checked-out tree
+6. Renders systemd and Caddyfile templates from the environment file
+7. Enables and restarts the services
+8. Runs a health smoke check
+
+Release-tarball install and nginx/nftables templates from earlier drafts
+are superseded by this Caddy-based path.
 
 Every step is announced before it runs and reports its outcome. A failure
 names the step, the cause, and what to check.

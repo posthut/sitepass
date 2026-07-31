@@ -21,6 +21,12 @@ import (
 )
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
+	if s.CFG.ReadOnly {
+		s.writeAPIError(w, http.StatusServiceUnavailable, CodeServiceReadOnly,
+			"Service is in read-only mode. Uploads are not accepted.", nil)
+		return
+	}
+
 	hash, ok := s.bearerHash(r)
 	if !ok {
 		s.writeAPIError(w, http.StatusNotFound, CodeTokenNotFound, "Token was not found.", nil)
@@ -52,11 +58,28 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, err := s.Store.GetAnonymousPlan(ctx)
+	plan, err := s.Store.GetPlanByID(ctx, t.PlanID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			plan, err = s.Store.GetAnonymousPlan(ctx)
+		}
+		if err != nil {
+			s.writeInternal(w, err)
+			return
+		}
+	}
+
+	count, err := s.Store.IncrementRateLimit(ctx, "uploads:"+t.ID.String(), s.now().Truncate(time.Hour))
 	if err != nil {
 		s.writeInternal(w, err)
 		return
 	}
+	if count > plan.MaxUploadsPerHour {
+		w.Header().Set("Retry-After", "3600")
+		s.writeAPIError(w, http.StatusTooManyRequests, CodeRateLimited, "Upload rate limit exceeded for this token.", nil)
+		return
+	}
+
 	maxArchive := plan.MaxArchiveBytes
 	if s.CFG.MaxArchiveBytes > 0 && s.CFG.MaxArchiveBytes < maxArchive {
 		maxArchive = s.CFG.MaxArchiveBytes

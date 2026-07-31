@@ -24,6 +24,10 @@ const (
 	CodeStorageCapacityExceeded  ErrorCode = "storage_capacity_exceeded"
 	CodeServiceReadOnly          ErrorCode = "service_read_only"
 	CodeInternalError            ErrorCode = "internal_error"
+	CodeAuthInvalid              ErrorCode = "auth_invalid"
+	CodeAuthConflict             ErrorCode = "auth_conflict"
+	CodeAuthUnauthorized         ErrorCode = "auth_unauthorized"
+	CodeAuthValidation           ErrorCode = "auth_validation"
 )
 
 // AllCodes returns every registered error code for contract tests.
@@ -46,5 +50,9 @@ func AllCodes() []ErrorCode {
 		CodeStorageCapacityExceeded,
 		CodeServiceReadOnly,
 		CodeInternalError,
+		CodeAuthInvalid,
+		CodeAuthConflict,
+		CodeAuthUnauthorized,
+		CodeAuthValidation,
 	}
 }

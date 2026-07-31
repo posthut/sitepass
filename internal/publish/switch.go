@@ -18,7 +18,7 @@ func SwitchAtomically(buildsRoot, label, siteRoot string, revision int) (string,
 	if err := os.MkdirAll(tokenDir, 0o755); err != nil {
 		return "", fmt.Errorf("create token dir: %w", err)
 	}
-	if err := os.RemoveAll(revDir); err != nil {
+	if err := ForceRemoveAll(revDir); err != nil {
 		return "", fmt.Errorf("clear revision dir: %w", err)
 	}
 	if err := os.Rename(siteRoot, revDir); err != nil {
@@ -56,8 +56,28 @@ func hardenTree(root string) error {
 // RemoveRevision deletes a revision directory after the grace period.
 func RemoveRevision(buildsRoot, label string, revision int) error {
 	path := filepath.Join(buildsRoot, label, fmt.Sprintf("rev-%d", revision))
-	if err := os.RemoveAll(path); err != nil {
+	if err := ForceRemoveAll(path); err != nil {
 		return fmt.Errorf("remove revision: %w", err)
+	}
+	return nil
+}
+
+// ForceRemoveAll removes a hardened published tree (dirs 0555, files 0444)
+// by restoring owner write bits first.
+func ForceRemoveAll(path string) error {
+	_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			_ = os.Chmod(p, 0o700)
+		} else {
+			_ = os.Chmod(p, 0o600)
+		}
+		return nil
+	})
+	if err := os.RemoveAll(path); err != nil {
+		return err
 	}
 	return nil
 }

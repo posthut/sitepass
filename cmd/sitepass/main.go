@@ -75,7 +75,13 @@ func run() error {
 		logger.Info("serving control ui", "dir", webDist)
 	}
 
-	reaper := &lifecycle.Reaper{DB: store.DB, BuildsDir: cfg.BuildsDir, Logger: logger}
+	reaper := &lifecycle.Reaper{
+		DB:                   store.DB,
+		BuildsDir:            cfg.BuildsDir,
+		DiskHighWaterPercent: cfg.DiskHighWaterPercent,
+		DiskCriticalPercent:  cfg.DiskCriticalPercent,
+		Logger:               logger,
+	}
 	reconciler := &lifecycle.Reconciler{DB: store.DB, BuildsDir: cfg.BuildsDir, Logger: logger}
 	go reaper.Run(ctx)
 	go reconciler.Run(ctx)

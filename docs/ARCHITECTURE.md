@@ -23,43 +23,42 @@ That boundary is the core design decision. Everything below follows from it.
     ┌──────────────────────────────────────────────────────────┐
     │ prod-VM (Debian 13)                                      │
     │                                                          │
-    │  nginx ──────────────────────────────────────┐           │
-    │    ├─ control vhost   sitepass.tech         │           │
-    │    │    ├─ /            → static SPA files   │           │
-    │    │    ├─ /api/*       → proxy to sitepass │           │
-    │    │    └─ /llms.txt    → static file        │           │
+    │  Caddy ──────────────────────────────────────┐           │
+    │    ├─ control vhost   CONTROL_DOMAIN        │           │
+    │    │    └─ reverse_proxy → sitepass :8080   │           │
     │    │                                          │          │
-    │    └─ preview vhost   *.sitepass-app.tech   │           │
-    │         └─ root /srv/sitepass/builds/$id/current        │
+    │    └─ preview vhost   *.PREVIEW_DOMAIN      │           │
+    │         └─ root /srv/sitepass/builds/$label/current     │
+    │            (on-demand TLS via /api/v1/internal/tls-ask) │
     │                                               │          │
     │  sitepass (Go binary, systemd) ◄─────────────┘          │
     │    ├─ HTTP API on 127.0.0.1:8080                         │
+    │    ├─ control UI (web/dist)                              │
     │    ├─ archive intake and unpacking                       │
     │    ├─ publisher (atomic symlink switch)                  │
-    │    ├─ reaper (TTL garbage collection)                    │
-    │    ├─ reconciler (disk/DB drift repair)                  │
-    │    └─ log ingester (preview view counts)                 │
+    │    ├─ reaper (TTL + critical disk eviction)              │
+    │    └─ reconciler (disk/DB drift repair)                  │
     │                                                          │
-    │  PostgreSQL 17 (native, unix socket only)                │
+    │  PostgreSQL (native, unix socket recommended)            │
     │                                                          │
-    │  /srv/sitepass/builds  (separate mount, nodev nosuid noexec) │
+    │  /srv/sitepass/builds                                    │
     └──────────────────────────────────────────────────────────┘
 
-Nothing else runs on the production host. No Docker, no Node, no Go
-toolchain, no package manager for customer dependencies.
+Nothing else runs on the production host for serving. The Go toolchain and
+Node are used only at bootstrap/build time.
 
 ### 2.1 Component responsibilities
 
 | Component | Responsibility |
 |---|---|
-| nginx (control) | TLS, static frontend, reverse proxy to the API |
-| nginx (preview) | Serving customer files, SPA fallback, cache headers |
-| sitepass | Tokens, intake, unpacking, publishing, lifecycle, analytics |
-| PostgreSQL | Tokens, builds, plans, events, rate-limit buckets |
-| Filesystem | Published content, isolated on its own mount with quota |
+| Caddy (control) | TLS, reverse proxy to the API/UI |
+| Caddy (preview) | On-demand TLS, serving customer files, SPA fallback |
+| sitepass | Tokens, auth, intake, unpacking, publishing, lifecycle |
+| PostgreSQL | Users, sessions, tokens, builds, plans, events, rate-limit buckets |
+| Filesystem | Published content under `/srv/sitepass/builds` |
 
 The Go process is the only writer to both the database and the build
-directory. nginx has read-only access to the build directory and no
+directory. Caddy has read-only access to the build directory and no
 database access at all.
 
 ---
@@ -68,7 +67,7 @@ database access at all.
 
 ### 3.1 Token creation
 
-    browser ──POST /api/v1/tokens──► nginx ──► sitepass
+    browser ──POST /api/v1/tokens──► Caddy ──► sitepass
                                                   │
                                                   ├─ check IP rate limit
                                                   ├─ check disk headroom

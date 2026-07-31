@@ -9,9 +9,10 @@ English only. Machine logic must key on `code`, never on `message`.
 ## Overview
 
 Sitepass publishes a static site build on a temporary public URL. An agent
-builds the project locally, packs the output, and uploads it via HTTP. No
-account is required. The human creates a token in the browser and hands it
-to the agent.
+builds the project locally, packs the output, and uploads it via HTTP.
+Anonymous use needs no account. Optional username+password accounts (no
+email verification) get a longer token TTL and a list of their previews.
+The human creates a token in the browser and hands it to the agent.
 
 Base API path: `/api/v1`
 All API responses: `application/json; charset=utf-8` (except this file)
@@ -27,12 +28,37 @@ On upload errors, `token_consumed` is always present. Rejections never consume t
 
 ### POST /api/v1/tokens
 
-Public. Rate limited per IP.
+Public. Rate limited per IP. If a session cookie is present, the token is
+owned by that user and uses the `registered` plan (longer TTL).
 
 Create an upload token. Optional body: `{ "project_name": "landing" }` (max 48 chars).
 
 Returns 201: token (shown once), token_id, preview_url, expires_at,
 expires_in_seconds, limits.
+
+### POST /api/v1/auth/register
+
+Public. No email. Body: `{ "username", "password" }`.
+Username: 3–32 chars `[A-Za-z0-9_]`. Password: min 8 chars.
+Sets HttpOnly session cookie. Returns 201 `{ user: { id, username } }`.
+
+### POST /api/v1/auth/login
+
+Public. Body: `{ "username", "password" }`. Sets session cookie.
+Returns 200 `{ user: { id, username } }`.
+
+### POST /api/v1/auth/logout
+
+Clears session. Returns 204.
+
+### GET /api/v1/auth/me
+
+Session required. Returns `{ user: { id, username } }`.
+
+### GET /api/v1/me/tokens
+
+Session required. Returns `{ tokens: [ { token_id, project_name, preview_url,
+subdomain, expires_at, expires_in_seconds, revision, has_build, live } ] }`.
 
 ### POST /api/v1/upload
 
@@ -66,6 +92,19 @@ Public, unauthenticated.
 
 Returns: status (`healthy` | `degraded` | `read_only`), accepting_uploads,
 disk_usage_percent.
+
+`read_only` when `SITEPASS_READ_ONLY` is set — uploads and new tokens rejected.
+`degraded` when disk is at/above high-water (or usage cannot be measured).
+`accepting_uploads` is false only in `read_only`. At high-water, existing
+tokens may still upload; only new token creation is refused.
+
+### Capacity behaviour
+
+- High-water: `POST /tokens` → `storage_capacity_exceeded`. Uploads continue.
+- Critical: reaper revokes oldest live tokens (by created_at) until usage
+  falls below high-water; content removed; tokens marked revoked.
+- Per-IP token creation and per-token upload hourly limits → `rate_limited`.
+- Maintenance: `SITEPASS_READ_ONLY=true` → `service_read_only` on tokens/upload.
 
 ### GET /llms.txt
 
@@ -194,8 +233,52 @@ HTTP 503. Maintenance mode.
 
 HTTP 500. Unexpected failure. Response includes a correlation id.
 
+### auth_invalid
+
+HTTP 401. Wrong username or password.
+
+### auth_conflict
+
+HTTP 409. Username already taken.
+
+### auth_unauthorized
+
+HTTP 401. Session missing or expired.
+
+### auth_validation
+
+HTTP 422. Username/password format invalid.
+
 ---
 
 ## Worked examples
 
-(TODO: add two worked examples when implementation is complete.)
+### Example 1 — create a token and upload a tar.gz
+
+```bash
+# 1. Human creates a token (or copies the instruction from the control UI).
+curl -sS -X POST https://CONTROL/api/v1/tokens \
+  -H 'Content-Type: application/json' \
+  -d '{"project_name":"landing"}'
+
+# Response includes token (shown once), preview_url, expires_at.
+
+# 2. Agent packs the production build and uploads it.
+curl -sS -X POST https://CONTROL/api/v1/upload \
+  -H "Authorization: Bearer TOKEN" \
+  -H 'Content-Type: application/octet-stream' \
+  --data-binary @dist.tar.gz
+
+# 3. Open preview_url. Re-upload with the same token to replace the site.
+```
+
+### Example 2 — check status, then revoke
+
+```bash
+curl -sS https://CONTROL/api/v1/status \
+  -H "Authorization: Bearer TOKEN"
+
+curl -sS -X DELETE https://CONTROL/api/v1/token \
+  -H "Authorization: Bearer TOKEN"
+# 204 — preview content is removed immediately
+```

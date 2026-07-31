@@ -1,5 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
-import { applyTheme, buildAgentInstruction, createToken, fetchStatus, initTheme } from './api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  applyTheme,
+  buildAgentInstruction,
+  createToken,
+  fetchHealth,
+  fetchMe,
+  fetchMyTokens,
+  fetchStatus,
+  initTheme,
+  login,
+  logout,
+  register,
+} from './api'
 import { detectLanguage, setLanguage, t } from './i18n'
 import './app.css'
 
@@ -31,15 +43,67 @@ export default function App() {
   const [now, setNow] = useState(Date.now())
   const [copied, setCopied] = useState('')
   const [liveMsg, setLiveMsg] = useState('')
+  const [user, setUser] = useState(null)
+  const [authMode, setAuthMode] = useState(null) // 'login' | 'register' | null
+  const [authUser, setAuthUser] = useState('')
+  const [authPass, setAuthPass] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
+  const [myTokens, setMyTokens] = useState([])
+  const [abuseContact, setAbuseContact] = useState('abuse@localhost')
 
   useEffect(() => {
     setLanguage(lang)
   }, [lang])
 
   useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const data = await fetchHealth()
+        if (!cancelled && data.abuse_contact) setAbuseContact(data.abuse_contact)
+      } catch {
+        /* keep default */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
+
+  const refreshMyTokens = useCallback(async () => {
+    try {
+      const data = await fetchMyTokens()
+      setMyTokens(data.tokens || [])
+    } catch {
+      setMyTokens([])
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const data = await fetchMe()
+        if (!cancelled) setUser(data.user)
+      } catch {
+        if (!cancelled) setUser(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (user) refreshMyTokens()
+    else setMyTokens([])
+  }, [user, refreshMyTokens])
 
   useEffect(() => {
     if (!session?.token) return undefined
@@ -92,11 +156,40 @@ export default function App() {
         revision: 0,
         upload_count: 0,
       })
+      if (user) refreshMyTokens()
     } catch (err) {
       setError(err.message || t(lang, 'error.generic'))
     } finally {
       setBusy(false)
     }
+  }
+
+  async function onAuth(e) {
+    e.preventDefault()
+    setAuthBusy(true)
+    setAuthError('')
+    try {
+      const fn = authMode === 'register' ? register : login
+      const data = await fn(authUser.trim(), authPass)
+      setUser(data.user)
+      setAuthMode(null)
+      setAuthPass('')
+      setAuthUser('')
+    } catch (err) {
+      setAuthError(err.message || t(lang, 'error.generic'))
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  async function onLogout() {
+    try {
+      await logout()
+    } catch {
+      /* ignore */
+    }
+    setUser(null)
+    setMyTokens([])
   }
 
   async function copyText(kind, text) {
@@ -115,6 +208,25 @@ export default function App() {
       <div className="topbar">
         <div className="brand">{t(lang, 'app.brand')}</div>
         <div className="controls">
+          {user ? (
+            <div className="account">
+              <span className="account-name">{user.username}</span>
+              <button type="button" className="btn btn-quiet" onClick={onLogout}>
+                {t(lang, 'auth.logout')}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setAuthMode(authMode ? null : 'login')
+                setAuthError('')
+              }}
+            >
+              {t(lang, 'auth.sign_in')}
+            </button>
+          )}
           <label className="sr-only" htmlFor="lang">
             {t(lang, 'lang.label')}
           </label>
@@ -140,10 +252,78 @@ export default function App() {
       </div>
 
       <h1 className="headline">{t(lang, 'app.headline')}</h1>
-      <p className="lead">{t(lang, 'app.lead')}</p>
+      <p className="lead">
+        {session && !expired ? t(lang, 'app.lead.ready') : t(lang, 'app.lead')}
+      </p>
+
+      {authMode && !user ? (
+        <form className="card auth-card" onSubmit={onAuth}>
+          <div className="auth-tabs">
+            <button
+              type="button"
+              className={authMode === 'login' ? 'is-active' : ''}
+              onClick={() => {
+                setAuthMode('login')
+                setAuthError('')
+              }}
+            >
+              {t(lang, 'auth.login')}
+            </button>
+            <button
+              type="button"
+              className={authMode === 'register' ? 'is-active' : ''}
+              onClick={() => {
+                setAuthMode('register')
+                setAuthError('')
+              }}
+            >
+              {t(lang, 'auth.register')}
+            </button>
+          </div>
+          <p className="helper">{t(lang, 'auth.no_email')}</p>
+          <div className="field">
+            <label htmlFor="username">{t(lang, 'auth.username')}</label>
+            <input
+              id="username"
+              autoComplete="username"
+              value={authUser}
+              onChange={(e) => setAuthUser(e.target.value)}
+              required
+              minLength={3}
+              maxLength={32}
+              pattern="[A-Za-z0-9_]+"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="password">{t(lang, 'auth.password')}</label>
+            <input
+              id="password"
+              type="password"
+              autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
+              value={authPass}
+              onChange={(e) => setAuthPass(e.target.value)}
+              required
+              minLength={8}
+            />
+          </div>
+          <button className="btn btn-primary" type="submit" disabled={authBusy}>
+            {authBusy ? '…' : authMode === 'register' ? t(lang, 'auth.register') : t(lang, 'auth.login')}
+          </button>
+          {authError ? (
+            <p className="error" role="alert">
+              {authError}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
 
       {!session || expired ? (
         <form className="card" onSubmit={onCreate}>
+          {user ? (
+            <p className="helper" style={{ marginBottom: 'var(--space-4)' }}>
+              {t(lang, 'auth.registered_hint')}
+            </p>
+          ) : null}
           <div className="field">
             <label htmlFor="project">{t(lang, 'token.create.project_name.label')}</label>
             <input
@@ -161,8 +341,16 @@ export default function App() {
           <button className="btn btn-primary" type="submit" disabled={busy}>
             {busy ? '…' : t(lang, 'token.create.button')}
           </button>
-          {expired ? <p className="helper" style={{ marginTop: 'var(--space-4)' }}>{t(lang, 'expired.body')}</p> : null}
-          {error ? <p className="error" role="alert">{error}</p> : null}
+          {expired ? (
+            <p className="helper" style={{ marginTop: 'var(--space-4)' }}>
+              {t(lang, 'expired.body')}
+            </p>
+          ) : null}
+          {error ? (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          ) : null}
         </form>
       ) : (
         <section className={`card${expired ? ' is-expired' : ''}`}>
@@ -218,8 +406,30 @@ export default function App() {
         </section>
       )}
 
+      {user && myTokens.length > 0 ? (
+        <section className="projects">
+          <h2 className="projects-title">{t(lang, 'projects.title')}</h2>
+          <ul className="projects-list">
+            {myTokens.map((item) => (
+              <li key={item.token_id}>
+                <a href={item.preview_url} target="_blank" rel="noreferrer">
+                  {item.project_name || item.subdomain}
+                </a>
+                <span className="projects-meta">
+                  {item.live
+                    ? item.has_build
+                      ? t(lang, 'status.live')
+                      : t(lang, 'status.waiting')
+                    : t(lang, 'status.expired')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <div className="footer">
-        <a href="mailto:abuse@localhost">{t(lang, 'abuse.link')}</a>
+        <a href={`mailto:${abuseContact}`}>{t(lang, 'abuse.link')}</a>
       </div>
       <div className="sr-only" aria-live="polite">
         {liveMsg}

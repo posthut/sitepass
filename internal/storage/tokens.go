@@ -30,6 +30,7 @@ type Token struct {
 	ID           uuid.UUID
 	TokenHash    []byte
 	TokenPrefix  string
+	UserID       *int64
 	PlanID       int16
 	ProjectName  *string
 	Subdomain    string
@@ -77,10 +78,10 @@ func (p *Pool) InsertToken(ctx context.Context, t Token) error {
 	defer cancel()
 	_, err := p.DB.Exec(ctx, `
 		INSERT INTO tokens (
-			id, token_hash, token_prefix, plan_id, project_name, subdomain,
+			id, token_hash, token_prefix, user_id, plan_id, project_name, subdomain,
 			created_at, expires_at, created_ip
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		t.ID, t.TokenHash, t.TokenPrefix, t.PlanID, t.ProjectName, t.Subdomain,
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		t.ID, t.TokenHash, t.TokenPrefix, t.UserID, t.PlanID, t.ProjectName, t.Subdomain,
 		t.CreatedAt, t.ExpiresAt, t.CreatedIP.String(),
 	)
 	if err != nil {

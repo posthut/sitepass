@@ -25,6 +25,7 @@ type Config struct {
 	AbuseContact          string
 	ACMEDNSProvider       string
 	ACMEDNSToken          string
+	ReadOnly              bool
 }
 
 // Load reads SITEPASS_* environment variables and validates them.
@@ -40,6 +41,7 @@ func Load() (Config, error) {
 		AbuseContact:    strings.TrimSpace(os.Getenv("SITEPASS_ABUSE_CONTACT")),
 		ACMEDNSProvider: strings.TrimSpace(os.Getenv("SITEPASS_ACME_DNS_PROVIDER")),
 		ACMEDNSToken:    strings.TrimSpace(os.Getenv("SITEPASS_ACME_DNS_TOKEN")),
+		ReadOnly:        parseBoolEnv("SITEPASS_READ_ONLY"),
 	}
 
 	var err error
@@ -126,6 +128,15 @@ func requiredInt64(name string) (int64, error) {
 		return 0, fmt.Errorf("%s is not a valid integer: %s", name, raw)
 	}
 	return v, nil
+}
+
+func parseBoolEnv(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // registrableSuffix returns a coarse eTLD+1 approximation for bootstrap

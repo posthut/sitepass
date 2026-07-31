@@ -1,7 +1,8 @@
 {
   "app.brand": "Sitepass",
-  "app.headline": "A temporary public URL for your build",
-  "app.lead": "Create an upload token, hand it to your agent, and open the preview when it is ready.",
+  "app.headline": "See how your site will look once it’s up",
+  "app.lead": "Create a token and take the instruction for your agent.",
+  "app.lead.ready": "Just hand your agent the instruction. The token is already in it.",
   "token.create.button": "Create upload token",
   "token.create.project_name.label": "Project name",
   "token.create.project_name.helper": "Affects the preview address and page title only.",
@@ -22,5 +23,14 @@
   "theme.light": "Light",
   "theme.dark": "Dark",
   "theme.system": "System",
-  "lang.label": "Language"
+  "lang.label": "Language",
+  "auth.sign_in": "Sign in",
+  "auth.login": "Sign in",
+  "auth.register": "Create account",
+  "auth.logout": "Sign out",
+  "auth.username": "Username",
+  "auth.password": "Password",
+  "auth.no_email": "No email needed. Pick a username and password — the account works immediately.",
+  "auth.registered_hint": "Signed in: new tokens last 2 hours and stay in your project list.",
+  "projects.title": "Your previews"
 }

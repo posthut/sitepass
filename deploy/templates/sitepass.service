@@ -1,0 +1,24 @@
+[Unit]
+Description=Sitepass API and control UI
+Documentation=https://github.com/posthut/sitepass
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User={{SERVICE_USER}}
+Group={{SERVICE_GROUP}}
+WorkingDirectory={{SITEPASS_ROOT}}
+EnvironmentFile={{ENV_FILE}}
+ExecStart={{SITEPASS_ROOT}}/bin/sitepass
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/srv/sitepass {{SITEPASS_ROOT}}
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

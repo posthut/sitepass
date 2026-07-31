@@ -15,15 +15,20 @@ export function initTheme() {
   }
 }
 
-export async function createToken(projectName) {
-  const body = projectName ? JSON.stringify({ project_name: projectName }) : '{}'
-  const res = await fetch('/api/v1/tokens', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept-Language': document.documentElement.lang || 'en' },
-    body,
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'application/json',
+      'Accept-Language': document.documentElement.lang || 'en',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...options.headers,
+    },
+    ...options,
   })
+  if (res.status === 204) return null
   const data = await res.json()
-  if (!res.ok || !data.ok) {
+  if (!res.ok || data?.ok === false) {
     const err = new Error(data?.error?.message || 'request failed')
     err.code = data?.error?.code
     throw err
@@ -31,17 +36,45 @@ export async function createToken(projectName) {
   return data
 }
 
+export async function fetchHealth() {
+  return api('/api/v1/health')
+}
+
+export async function createToken(projectName) {
+  const body = projectName ? JSON.stringify({ project_name: projectName }) : '{}'
+  return api('/api/v1/tokens', { method: 'POST', body })
+}
+
 export async function fetchStatus(token) {
-  const res = await fetch('/api/v1/status', {
+  return api('/api/v1/status', {
     headers: { Authorization: `Bearer ${token}` },
   })
-  const data = await res.json()
-  if (!res.ok || !data.ok) {
-    const err = new Error(data?.error?.message || 'request failed')
-    err.code = data?.error?.code
-    throw err
-  }
-  return data
+}
+
+export async function register(username, password) {
+  return api('/api/v1/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+}
+
+export async function login(username, password) {
+  return api('/api/v1/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+}
+
+export async function logout() {
+  return api('/api/v1/auth/logout', { method: 'POST' })
+}
+
+export async function fetchMe() {
+  return api('/api/v1/auth/me')
+}
+
+export async function fetchMyTokens() {
+  return api('/api/v1/me/tokens')
 }
 
 export function buildAgentInstruction(token, previewUrl, expiresAt) {
@@ -65,20 +98,4 @@ export function buildAgentInstruction(token, previewUrl, expiresAt) {
     'Read /llms.txt for the full contract and error codes.',
     'Re-upload with the same token to replace the preview. The URL does not change.',
   ].join('\n')
-}
-
-export function formatCountdown(expiresAt, now = Date.now()) {
-  const ms = Math.max(0, new Date(expiresAt).getTime() - now)
-  const totalSec = Math.floor(ms / 1000)
-  const m = Math.floor(totalSec / 60)
-  const s = totalSec % 60
-  return {
-    ms,
-    totalSec,
-    label: `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
-    fraction: (() => {
-      // unknown original TTL; UI gets expires_in_seconds from create response
-      return null
-    })(),
-  }
 }
