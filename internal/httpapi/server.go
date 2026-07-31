@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("DELETE /api/v1/token", s.handleDeleteToken)
 	mux.HandleFunc("GET /llms.txt", s.handleLLMs)
+	mux.HandleFunc("GET /api/v1/internal/tls-ask", s.handleTLSAsk)
 	return mux
 }
 
@@ -171,6 +172,10 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 			s.writeAPIError(w, http.StatusUnprocessableEntity, CodeProjectNameInvalid, "Subdomain collision; try another project name.", nil)
 			return
 		}
+		s.writeInternal(w, err)
+		return
+	}
+	if err := seedWaitingPage(s.CFG.BuildsDir, gen.Subdomain); err != nil {
 		s.writeInternal(w, err)
 		return
 	}

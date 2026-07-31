@@ -1,0 +1,33 @@
+{
+	email abuse@sitepass.tech
+	on_demand_tls {
+		ask http://127.0.0.1:8080/api/v1/internal/tls-ask
+	}
+}
+
+sitepass.tech {
+	encode gzip
+	request_body {
+		max_size 110MB
+	}
+	reverse_proxy 127.0.0.1:8080
+}
+
+*.sitepass.tech {
+	tls {
+		on_demand
+	}
+	header X-Robots-Tag "noindex, nofollow"
+	header X-Content-Type-Options "nosniff"
+	header Cache-Control "no-cache"
+
+	root * /srv/sitepass/builds/{labels.2}/current
+	try_files {path} {path}/ {path}.html /index.html
+	file_server
+
+	handle_errors {
+		rewrite * /expired.html
+		root * /srv/sitepass/system
+		file_server
+	}
+}

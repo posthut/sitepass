@@ -95,8 +95,11 @@ func (c Config) validate() error {
 	if c.DiskCriticalPercent <= c.DiskHighWaterPercent || c.DiskCriticalPercent >= 100 {
 		return fmt.Errorf("SITEPASS_DISK_CRITICAL_PERCENT must be greater than high-water and below 100")
 	}
-	if registrableSuffix(c.ControlDomain) == registrableSuffix(c.PreviewDomain) {
-		return fmt.Errorf("SITEPASS_CONTROL_DOMAIN and SITEPASS_PREVIEW_DOMAIN must be different registrable domains")
+	// Shared-apex mode: CONTROL == PREVIEW means previews are served at
+	// <label>.<domain> on the same registrable domain as the control site.
+	if c.ControlDomain != c.PreviewDomain &&
+		registrableSuffix(c.ControlDomain) == registrableSuffix(c.PreviewDomain) {
+		return fmt.Errorf("SITEPASS_CONTROL_DOMAIN and SITEPASS_PREVIEW_DOMAIN must be different registrable domains (or set them equal for shared-apex mode)")
 	}
 	return nil
 }

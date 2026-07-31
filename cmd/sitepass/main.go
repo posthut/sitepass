@@ -15,6 +15,7 @@ import (
 
 	"github.com/posthut/sitepass/internal/config"
 	"github.com/posthut/sitepass/internal/httpapi"
+	"github.com/posthut/sitepass/internal/lifecycle"
 	"github.com/posthut/sitepass/internal/storage"
 )
 
@@ -73,6 +74,12 @@ func run() error {
 		handler = api.WithStatic(webDist)
 		logger.Info("serving control ui", "dir", webDist)
 	}
+
+	reaper := &lifecycle.Reaper{DB: store.DB, BuildsDir: cfg.BuildsDir, Logger: logger}
+	reconciler := &lifecycle.Reconciler{DB: store.DB, BuildsDir: cfg.BuildsDir, Logger: logger}
+	go reaper.Run(ctx)
+	go reconciler.Run(ctx)
+
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           handler,
